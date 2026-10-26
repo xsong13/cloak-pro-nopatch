@@ -1,0 +1,23 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022"],
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "strict": true,
+        "declaration": true,
+        "declarationMap": false,
+        "sourceMap": false,
+        "outDir": "dist",
+        "rootDir": ".",
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "noImplicitOverride": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "types": ["node"]
+    },
+    "include": ["index.ts", "example.ts", "test_readonly.ts", "diagnose.ts", "src/**/*.ts"],
+    "exclude": ["dist", "node_modules"]
+}
