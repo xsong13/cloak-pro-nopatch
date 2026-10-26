@@ -1,6 +1,6 @@
 {
     "name": "cloak-pro-nopatch",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "Unlimited concurrent sessions for an already patched CloakBrowser Pro build, without touching the browser installation.",
     "type": "module",
     "main": "./dist/index.js",
