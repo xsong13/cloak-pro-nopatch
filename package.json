@@ -44,6 +44,5 @@
         "license",
         "read-only"
     ],
-    "license": "MIT",
-    "private": true
+    "license": "MIT"
 }
