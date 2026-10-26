@@ -1,6 +1,5 @@
 import { launch } from './dist/index.js';
 
-//const LICENSE_KEY = 'cb_4c1c1ba2be5f4091ba51f90029c1a043';
 const LICENSE_KEY = 'dev_local';
 
 const baseOpts = {

@@ -22,3 +22,5 @@ browsers/
 chrome.dll
 chrome.exe
 *.orig
+
+.workbuddy

@@ -1,39 +1,114 @@
 # cloak-pro-nopatch
 
-给**已经打好补丁**的 CloakBrowser Pro 构建用的运行时模块：取消并发席位限制，但**完全不碰浏览器安装目录**。
+让 CloakBrowser Pro 解除并发席位限制，跑起来之后**运行期完全不碰浏览器安装目录**。
 
-和 `cloak-pro-unlimited` 的区别就一条 —— 这里没有改二进制的代码：
+这个仓库里有两个东西，按顺序用：
 
-| | `cloak-pro-unlimited` | `cloak-pro-nopatch`（本包） |
-|---|---|---|
-| 修改 `chrome.dll` | 自动打补丁 + 建 `.orig` 备份 | **不写、不备份、不还原**，只读检查 |
-| 适合场景 | 手里是原版 Pro 安装 | 手里已有打好补丁的包（例如你自己压的那个） |
-| 代码里的写操作 | `patchDll` / `revertDll` | 源码与编译产物中都不存在 |
-| 席位限制 | 消失 | 消失（前提：构建本身已绕过签名校验） |
-| 其它 | 版本升级后要重新打补丁 | 换包就换目录，模块不用动 |
+| 部件 | 文件 | 做什么 | 是否写盘 |
+|---|---|---|---|
+| 一次性补丁 CLI | `patch.js` | 把 `chrome.dll` 里 4 处签名校验槽位改成 `mov eax,1`，并留一份 `.orig` 备份 | 写一次，之后不再动 |
+| 运行时模块 | `index.ts` → `dist/` | 起进程内本地授权 API，把每次启动指过去，于是席位不再计数 | **不写**，只读检查 |
 
-## 快速开始
+补丁只做一次（换新版本构建时再做一次），运行时模块每次启动都只在内存里干活。
 
-```bash
-cd cloak-pro-nopatch
-npm i          # typescript / @types/node
-npm run build  # -> dist/*.js + *.d.ts
+## 使用方法
+
+### 1. 下载 Pro 版 Cloak Browser
+
+解压到任意目录，记下根目录路径（里面有 `chrome.exe` 和 `chrome.dll` 的那一层），例如：
+
+```
+D:\packages\chromium-155.0.8059.39.1-pro
 ```
 
-```ts
-import { launch } from './cloak-pro-nopatch/dist/index.js';
+### 2. 打补丁
+
+```bash
+node ./patch.js "D:\packages\chromium-155.0.8059.39.1-pro"
+```
+
+引号别省，路径里有反斜杠。跑完会打印目标文件、sha256、识别到的构建版本、4 个槽位的状态，最后是 `OK — license signature gate bypassed`。首次执行会生成 `chrome.dll.orig` 备份。
+
+保险起见，第一次可以先干跑，只看不改：
+
+```bash
+node ./patch.js "D:\packages\chromium-155.0.8059.39.1-pro" --dry-run
+```
+
+其它参数：
+
+| 参数 | 说明 |
+|---|---|
+| `--dry-run` / `-n` | 只报告会改哪几个槽位，不写盘 |
+| `--revert` | 从 `chrome.dll.orig` 还原 |
+| `--no-backup` | 不建 `.orig` 备份 |
+| `--sites 0x…,0x…` | 手动指定槽位（自动识别失败时用） |
+| `--verify-va 0x…` | 手动指定 verify 例程地址 |
+| `--json` | 输出机器可读报告 |
+| `--help` / `-h` | 帮助 |
+
+也可以直接传 `chrome.exe` 或 `chrome.dll` 的路径；一次传多个路径会批量处理。退出码：`0` 成功或无事可做，`1` 失败，`2` 用法错误。
+
+`patch.js` 没有依赖、不联网、不启动浏览器，只改磁盘上的 DLL。
+
+### 3. 正常使用
+
+补丁打好后，直接用下面的模块起浏览器即可（也可以继续用官方 wrapper，但席位限制的解除来自模块起的本地授权 API）。
+
+### 4. 跑一下测试
+
+```bash
+node ./test.js
+```
+
+它会先后开 3 个实例（百度 / example.com），逐个打印标题，能出三行标题就说明无席位限制。
+
+> `test.js` 里 import 的是 `./dist/index.js`，所以第一次跑之前先构建一次：
+> `npm i && npm run build`。
+
+## 代码里怎么用
+
+```js
+import { launch } from 'cloak-pro-nopatch';
 
 const browser = await launch({
     headless: false,
-    licenseKey: process.env.CB_KEY ?? 'cb_local_dev',      // 任意非空字符串
-    browserDir: 'D:\\packages\\chromium-154.0.8037.57.1-pro', // 你的包目录
+    licenseKey: 'dev_local',
+});
+
+const page = await browser.newPage();
+await page.goto('https://example.com');
+console.log(await page.title());
+```
+
+`licenseKey` 填**任意非空字符串**即可（本地授权 API 只对 `sha256(key)` 做一致性比对）；`'dev_local'` 是常用的占位值。留空会让二进制自己 `exit 77`。
+
+想显式锁定某个构建（多版本共存时推荐）：
+
+```js
+const browser = await launch({
+    headless: false,
+    licenseKey: 'dev_local',
+    browserDir: 'D:\\packages\\chromium-155.0.8059.39.1-pro',
 });
 ```
 
 不传 `browserDir` / `binaryPath` 时，按 `CLOAKBROWSER_BINARY_PATH` → `ensureBinary()` →
 `~/.cloakbrowser` 下最新 `chromium-*-pro` 解析。
 
-## 它做了什么
+## 和 cloak-pro-unlimited 的区别
+
+| | `cloak-pro-unlimited` | `cloak-pro-nopatch`（本包） |
+|---|---|---|
+| 修改 `chrome.dll` | 自动打补丁 + 建 `.orig` 备份 | **不写、不备份、不还原**，只读检查 |
+| 适合场景 | 手里是原版 Pro 安装 | 手里已有打好补丁的包（例如自己压的那个） |
+| 代码里的写操作 | `patchDll` / `revertDll` | 源码与编译产物中都不存在 |
+| 席位限制 | 消失 | 消失（前提：构建本身已绕过签名校验） |
+| 其它 | 版本升级后要重新打补丁 | 换包就换目录，模块不用动 |
+
+`patch.js` 就是把 `cloak-pro-unlimited` 的补丁逻辑抽出来单独跑一次；之后交给本包做只读运行。
+
+## 运行时模块做了什么
 
 只做三件事，都不落盘：
 
@@ -106,11 +181,19 @@ PASS — 3 concurrent sessions, installation bit-identical, no write paths in th
 
 ## 常见问题
 
+**补丁和模块的分工？** `patch.js` 只改一次 DLL（这是唯一写盘的地方）；本包运行期只读。
+两者可以分开用：别的工具补过的构建，直接用本包就行。
+
 **这个包会不会在别的地方写文件？** 不会。它不创建 `.orig`、不改 `~/.cloakbrowser/license.key`、
 不写缓存文件；唯一的进程状态是内存里的 HTTP 监听和 `process.env`。
 
+**`node ./patch.js` 报 `could not locate the signature gate`？** 说明这个构建的槽位布局不是预期的
+4 处 `call`。先用 `--dry-run --json` 看报告，再考虑 `--sites` / `--verify-va` 手动指定。
+
+**`node ./test.js` 报 `dev_local is not defined`？** `licenseKey` 漏了引号，写成 `'dev_local'`。
+
 **我的构建要满足什么条件？** `chrome.dll` 里的 4 处 `call ED25519_verify` 已改成 `mov eax,1`
-（`cloak-pro-unlimited` 的补丁结果就是这样），或者干脆是没有 license runtime 的免费构建。
+（`patch.js` 的结果就是这样），或者干脆是没有 license runtime 的免费构建。
 用 `isPatched()` / `status()` 一查便知。
 
 **key 填什么？** 任意非空字符串即可：本地 API 用 `sha256(key)` 生成租约里的
@@ -120,12 +203,12 @@ PASS — 3 concurrent sessions, installation bit-identical, no write paths in th
 
 **心跳怎么办？** 本地 API 每 60s 应答一次 `/heartbeat`，长时间挂着不会被踢。
 
-**升级 / 换包怎么办？** 直接换 `browserDir` 就行，模块不缓存构建（按选择器缓存的是
-`prepare()` 结果，`shutdown()` 后清空）。
+**升级 / 换包怎么办？** 对新构建再跑一次 `node ./patch.js "新目录"`；模块侧直接换 `browserDir`
+就行，不缓存构建（按选择器缓存的是 `prepare()` 结果，`shutdown()` 后清空）。
 
 ## 已知边界
 
-- 构建本身必须已绕过签名校验 —— 这是本包的前提，不负责修补；
+- 构建本身必须已绕过签名校验 —— `patch.js` 负责这件事，或由你已有的构建提供；
 - `K_wrapped` 是本地随机占位值，依赖该密钥的服务端素材不会被真正解开（实测不影响启动与指纹参数）；
 - 只处理「按 license key 席位计费」这一层，不自造服务端其它权益。
 
@@ -133,9 +216,11 @@ PASS — 3 concurrent sessions, installation bit-identical, no write paths in th
 
 ```
 cloak-pro-nopatch/
+├── patch.js            一次性补丁 CLI（无依赖，改 chrome.dll + .orig 备份 + --revert）
+├── test.js             冒烟测试：连开 3 个实例打印页面标题
 ├── index.ts            公共 API：prepare / launch / status / isPatched / verifyUnmodified …
 ├── src/
-│   ├── types.ts        全部类型（没有 PatchReport —— 本包不存在写路径）
+│   ├── types.ts        全部类型（没有 PatchReport —— 运行期不存在写路径）
 │   ├── inspect.ts      只读检查：站点识别、patched 判定、sha256 快照、可读写探测
 │   ├── pe.ts           PE32+ 解析、VA↔偏移、字符串定位、RIP 引用扫描（全只读）
 │   ├── resolve.ts      定位构建：binaryPath → browserDir → 环境变量 → ensureBinary → 目录扫描
@@ -159,11 +244,12 @@ cloak-pro-nopatch/
 | `npm run test:readonly` | 只读保证回归（目录快照 + 写调用扫描） |
 | `npm run example` | 并发示例（`N=10 HEADED=1`） |
 | `npm run check` | typecheck → build → 只读回归，一条命令验完 |
+| `node ./patch.js "目录"` | 给新构建打补丁（不打进 npm scripts，它是独立 CLI） |
 
 代码约定：
 
 - 本包**不允许**出现 `writeFileSync` / `copyFileSync` / `renameSync` / `unlinkSync` / `mkdirSync`
-  或 `'r+'` 打开方式 —— `test:readonly` 会扫描编译产物强制这条约束；
-- 新增构建版本时只需往 `KNOWN_PROFILES` 里补一条（原版 sha256 + verify 例程 + 4 个槽位），
+  或 `'r+'` 打开方式 —— `test:readonly` 会扫描编译产物强制这条约束（`patch.js` 是独立的写盘 CLI，
+  不在 `dist/` 内，不受此约束）；
+- 新增构建版本时只需往 `KNOWN_PROFILES`（运行时）和 `patch.js` 的 `PROFILES`（补丁 CLI）里各补一条，
   其余场景由公钥锚定发现兜底。
-
